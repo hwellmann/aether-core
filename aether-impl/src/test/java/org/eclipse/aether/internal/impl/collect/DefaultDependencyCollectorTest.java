@@ -8,9 +8,14 @@
  * Contributors:
  *    Sonatype, Inc. - initial API and implementation
  *******************************************************************************/
-package org.eclipse.aether.internal.impl;
+package org.eclipse.aether.internal.impl.collect;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -39,6 +44,9 @@ import org.eclipse.aether.graph.DependencyCycle;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.Exclusion;
 import org.eclipse.aether.impl.ArtifactDescriptorReader;
+import org.eclipse.aether.internal.impl.IniArtifactDescriptorReader;
+import org.eclipse.aether.internal.impl.StubRemoteRepositoryManager;
+import org.eclipse.aether.internal.impl.StubVersionRangeResolver;
 import org.eclipse.aether.internal.test.util.DependencyGraphParser;
 import org.eclipse.aether.internal.test.util.TestLoggerFactory;
 import org.eclipse.aether.internal.test.util.TestUtils;
@@ -480,6 +488,58 @@ public class DefaultDependencyCollectorTest
         CollectRequest request = new CollectRequest().setRoot( newDep( "gid:aid:1" ) );
         CollectResult result = collector.collectDependencies( session, request );
         assertEquals( 1, result.getRoot().getChildren().size() );
+    }
+    
+    @Test
+    public void testResolveRootRelocation() throws Exception
+    {
+        Dependency dependency = newDep( "oldgid:aid:ext:ver" );
+        CollectRequest request = new CollectRequest( dependency, Arrays.asList( repository ) );
+
+        session.setDependencyManager( new ClassicDependencyManager() );
+
+        CollectResult result = collector.collectDependencies( session, request );
+
+        assertEquals( 0, result.getExceptions().size() );
+
+        Dependency relocated = newDep( "gid:aid:ext:ver", null );
+        DependencyNode root = result.getRoot();
+
+        assertEquals( relocated, dep( root ) );
+        assertEquals( relocated.getArtifact(), dep( root ).getArtifact() );
+
+        assertEquals( 1, root.getChildren().size() );
+        Dependency expect = newDep( "gid:aid2:ext:ver", "compile" );
+        assertEquals( expect, dep( root, 0 ) );
+
+        assertEquals( 0, path( root, 0 ).getChildren().size() );
+    }
+
+    @Test
+    public void testResolveDependencyRelocation() throws Exception
+    {
+        Dependency dependency = newDep( "gid:aid3:ext:5" );
+        CollectRequest request = new CollectRequest( dependency, Arrays.asList( repository ) );
+
+        session.setDependencyManager( new ClassicDependencyManager() );
+
+        CollectResult result = collector.collectDependencies( session, request );
+
+        assertEquals( 0, result.getExceptions().size() );
+
+        DependencyNode root = result.getRoot();
+        assertEquals( dependency, dep( root ) );
+        assertEquals( dependency.getArtifact(), dep( root ).getArtifact() );
+
+        assertEquals( 1, root.getChildren().size() );
+        Dependency expect = newDep( "gid:aid:ext:ver", "compile" );
+        assertEquals( expect, dep( root, 0 ) );
+
+        assertEquals( 1, path( root, 0 ).getChildren().size() );
+        expect = newDep( "gid:aid2:ext:ver", "compile" );
+        assertEquals( expect, dep( root, 0, 0 ) );
+
+        assertEquals( 0, path( root, 0, 0 ).getChildren().size() );
     }
 
     static class TestDependencyManager
